@@ -1,0 +1,7 @@
+[metadata]
+difficulty = "medium"
+category = "log-analysis"
+# Some INFO and WARN messages mention the word ERROR, so a plain `grep -c ERROR` overcounts.
+
+[verifier]
+timeout_sec = 30

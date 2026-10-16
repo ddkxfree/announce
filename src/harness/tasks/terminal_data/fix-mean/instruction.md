@@ -1,0 +1,1 @@
+The function `mean` in /app/stats.py returns wrong results. Fix it so that it returns the arithmetic mean of a non-empty list of numbers. Do not change its name or signature, and do not change the other functions in the file.

@@ -30,6 +30,20 @@ def summarize(results: list[SampleResult]) -> dict[str, Any]:
     fresh = [o.latency_s for o in outputs if not o.cached]
     lo, hi = bootstrap_ci(values)
 
+    agent: dict[str, Any] | None = None
+    agent_results = [r for r in results if r.steps]
+    if agent_results:
+        exit_codes = [c for r in agent_results for s in r.steps for c in s.exit_codes]
+        commands = [c for c in exit_codes if c is not None]
+        agent = {
+            "finish_reasons": dict(
+                Counter(r.output.finish_reason for r in agent_results if r.output).most_common()
+            ),
+            "mean_steps": sum(len(r.steps) for r in agent_results) / len(agent_results),
+            "commands": len(commands),
+            "failed_commands": sum(c != 0 for c in commands),
+        }
+
     return {
         "n": n,
         "accuracy": sum(values) / n if n else 0.0,
@@ -43,4 +57,5 @@ def summarize(results: list[SampleResult]) -> dict[str, Any]:
         },
         "cached": sum(o.cached for o in outputs),
         "mean_latency_s": sum(fresh) / len(fresh) if fresh else None,
+        "agent": agent,
     }

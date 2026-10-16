@@ -6,6 +6,7 @@ from typing import Any
 from harness.analysis.stats import summarize
 from harness.core.io import read_json, read_results, write_json, write_results
 from harness.core.manifest import now
+from harness.core.scorer import requires_sandbox
 from harness.core.task import get_task
 from harness.core.types import classify
 
@@ -26,6 +27,9 @@ def rescore_run(run_dir: Path) -> dict[str, Any]:
         if not samples_path.exists():
             continue
         scorer = get_task(name, **entry["params"]).scorer
+        if requires_sandbox(scorer):
+            changes[name] = {"skipped": "scorer needs the sandbox, which no longer exists"}
+            continue
         results = read_results(samples_path)
 
         flipped = 0

@@ -147,14 +147,22 @@ class MockModel(Model):
         return {"type": "mock", "name": self.name}
 
 
+def _no_model(messages: list[Message]) -> str:
+    raise RuntimeError("no model configured (model 'none/none'); use a solver that needs no model")
+
+
 def get_model(spec: str, *, base_url: str | None = None, api_key: str | None = None) -> Model:
     """Build a model from ``provider/model-name``, e.g. ``dashscope/qwen-plus``.
 
     The model name may itself contain slashes (``vllm/Qwen/Qwen2.5-7B-Instruct``).
+    ``none/none`` is a placeholder for runs whose solver never calls a model, such as
+    the oracle solver.
     """
     provider, sep, name = spec.partition("/")
     if not sep or not name:
         raise ValueError(f"Model spec must look like 'provider/model', got {spec!r}")
+    if spec == "none/none":
+        return MockModel(_no_model, name="none")
     if provider not in PROVIDERS:
         raise ValueError(f"Unknown provider {provider!r}. Known: {', '.join(PROVIDERS)}")
 

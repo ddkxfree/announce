@@ -12,7 +12,7 @@ from rich.table import Table
 
 from harness.core.config import RunConfig, TaskConfig
 from harness.core.io import read_json, read_results
-from harness.core.types import Outcome
+from harness.core.types import Outcome, SampleResult
 
 app = typer.Typer(add_completion=False, help="A small, reproducible LLM evaluation harness.")
 console = Console()
@@ -120,6 +120,11 @@ def run(
     llm = get_model(cfg.model, base_url=cfg.base_url)
     tasks = [(get_task(t.name, **t.params), cfg.generate_for(t)) for t in cfg.tasks]
     cache = DiskCache(cfg.cache_dir) if cfg.cache else None
+    sandbox_provider = None
+    if any(t.sandbox is not None for t, _ in tasks):
+        from harness.sandbox.docker import DockerProvider
+
+        sandbox_provider = DockerProvider()
 
     with Progress(
         TextColumn("{task.description}"),
@@ -138,6 +143,7 @@ def run(
                 retries=cfg.retries,
                 run_config=cfg.model_dump(mode="json"),
                 progress=progress,
+                sandbox_provider=sandbox_provider,
             )
         )
 
@@ -145,37 +151,74 @@ def run(
     console.print(_summary_table(manifest["results"], f"{cfg.model}  ({run_dir})"))
 
 
+def _print_sample(r: SampleResult, full: bool) -> None:
+    def plain(text: str) -> None:
+        console.print(text if full else text[-800:], markup=False, highlight=False)
+
+    console.rule(f"{r.sample.id}  outcome={r.outcome}")
+    extracted = r.score.extracted if r.score else None
+    method = r.score.method if r.score else None
+    console.print(f"target={r.sample.target!r}  extracted={extracted!r}  method={method}")
+    if r.error:
+        console.print(f"[red]{r.error}[/]")
+    for step in r.steps:
+        tokens = step.usage.input_tokens + step.usage.output_tokens
+        console.print(f"[bold cyan]step {step.index}[/]  ({tokens} tokens)")
+        if step.text.strip():
+            plain(step.text)
+        for call, obs in zip(step.tool_calls, step.observations, strict=False):
+            plain(f"$ {call.name} {call.arguments}")
+            plain(obs)
+    if not r.steps:
+        plain(r.output.text if r.output else "")
+    if r.score:
+        for key, value in r.score.details.items():
+            console.print(f"[bold]{key}[/]:")
+            plain(str(value))
+
+
 @app.command()
 def show(
     run_dir: Path,
     task: Annotated[str | None, typer.Option("--task", "-t")] = None,
     outcome: Annotated[str | None, typer.Option(help="Only show samples with this outcome")] = None,
+    sample: Annotated[str | None, typer.Option(help="Show one sample by id, in full")] = None,
     n: Annotated[int, typer.Option("-n", help="Number of samples to print")] = 5,
 ) -> None:
-    """Print a run's summary and example samples, e.g. all extract_failed cases."""
+    """Print a run's summary and example samples, e.g. all extract_failed cases.
+
+    Agent samples are printed with their full trajectory of tool calls and observations.
+    """
     manifest = read_json(run_dir / "manifest.json")
     console.print(_summary_table(manifest["results"], manifest["run_id"]))
 
     for name, s in manifest["results"].items():
         console.print(f"[bold]{name}[/] extraction methods: {s['extraction_methods']}")
+        if s.get("agent"):
+            console.print(f"[bold]{name}[/] agent: {s['agent']}")
 
-    if outcome is None:
+    if outcome is None and sample is None:
         return
     names = [task] if task else list(manifest["results"])
     for name in names:
         shown = 0
         for r in read_results(run_dir / name / "samples.jsonl"):
+            if sample is not None:
+                if r.sample.id == sample:
+                    _print_sample(r, full=True)
+                continue
             if r.outcome != outcome or shown >= n:
                 continue
             shown += 1
-            text = r.output.text if r.output else ""
-            console.rule(f"{r.sample.id}  outcome={r.outcome}")
-            extracted = r.score.extracted if r.score else None
-            method = r.score.method if r.score else None
-            console.print(f"target={r.sample.target!r}  extracted={extracted!r}  method={method}")
-            if r.error:
-                console.print(f"[red]{r.error}[/]")
-            console.print(text[-800:], markup=False, highlight=False)
+            _print_sample(r, full=False)
+
+
+@app.command("sandbox-cleanup")
+def sandbox_cleanup() -> None:
+    """Remove leftover sandbox containers, e.g. after a crashed run."""
+    from harness.sandbox.docker import DockerProvider
+
+    console.print(f"removed {DockerProvider().cleanup()} container(s)")
 
 
 @app.command()
@@ -185,6 +228,9 @@ def rescore(run_dir: Path) -> None:
 
     changes = rescore_run(run_dir)
     for name, c in changes.items():
+        if "skipped" in c:
+            console.print(f"{name}: skipped ({c['skipped']})")
+            continue
         console.print(
             f"{name}: accuracy {c['accuracy_before']:.3f} -> {c['accuracy_after']:.3f}"
             f" ({c['samples_changed']} samples changed)"

@@ -1,0 +1,6 @@
+[metadata]
+difficulty = "easy"
+category = "file-ops"
+
+[verifier]
+timeout_sec = 30
