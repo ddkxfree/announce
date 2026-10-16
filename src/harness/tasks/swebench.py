@@ -162,7 +162,8 @@ class SweBenchScorer:
             report = get_eval_report(spec, prediction, str(log_path), True)[row["instance_id"]]
 
         if report.get("infra_failure"):
-            raise SandboxError(f"evaluation infrastructure failed: {report.get('infra_failure_reason')}")
+            reason = report.get("infra_failure_reason")
+            raise SandboxError(f"evaluation infrastructure failed: {reason}")
         tests = report.get("tests_status", {})
         details["tests"] = {
             group: {k: len(v) for k, v in status.items()} for group, status in tests.items()
