@@ -5,7 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-Message = dict[str, str]
+# OpenAI chat format. Assistant messages may carry "tool_calls"; tool results use role "tool".
+Message = dict[str, Any]
 
 
 class Sample(BaseModel):
@@ -33,19 +34,59 @@ class Usage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
 
+    def __add__(self, other: Usage) -> Usage:
+        return Usage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+        )
+
+
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: str
+
+    def to_message(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {"name": self.name, "arguments": self.arguments},
+        }
+
 
 class ModelOutput(BaseModel):
     text: str
+    tool_calls: list[ToolCall] = Field(default_factory=list)
     finish_reason: str | None = None
     usage: Usage = Field(default_factory=Usage)
     latency_s: float = 0.0
     cached: bool = False
 
 
+class Step(BaseModel):
+    """One model turn of an agent loop and the tool executions it triggered."""
+
+    index: int
+    text: str
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    observations: list[str] = Field(default_factory=list)
+    exit_codes: list[int | None] = Field(default_factory=list)
+    usage: Usage = Field(default_factory=Usage)
+    latency_s: float = 0.0
+    tool_latency_s: float = 0.0
+
+
+class SolveResult(BaseModel):
+    messages: list[Message]
+    output: ModelOutput
+    steps: list[Step] = Field(default_factory=list)
+
+
 class Score(BaseModel):
     value: float
     extracted: str | None = None
     method: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class Outcome(StrEnum):
@@ -53,26 +94,39 @@ class Outcome(StrEnum):
     WRONG = "wrong"
     EXTRACT_FAILED = "extract_failed"
     TRUNCATED = "truncated"
+    STEP_LIMIT = "step_limit"
     API_ERROR = "api_error"
+    ENV_ERROR = "env_error"
+
+
+class ErrorKind(StrEnum):
+    MODEL = "model"
+    ENV = "env"
 
 
 class SampleResult(BaseModel):
     sample: Sample
     messages: list[Message] = Field(default_factory=list)
     output: ModelOutput | None = None
+    steps: list[Step] = Field(default_factory=list)
     score: Score | None = None
     error: str | None = None
+    error_kind: ErrorKind | None = None
     outcome: Outcome | None = None
     attempts: int = 0
 
 
 def classify(result: SampleResult) -> Outcome:
+    if result.error_kind == ErrorKind.ENV:
+        return Outcome.ENV_ERROR
     if result.error is not None or result.output is None or result.score is None:
         return Outcome.API_ERROR
     if result.score.value >= 1.0:
         return Outcome.CORRECT
     if result.output.finish_reason == "length":
         return Outcome.TRUNCATED
+    if result.output.finish_reason == "max_steps":
+        return Outcome.STEP_LIMIT
     if result.score.extracted is None:
         return Outcome.EXTRACT_FAILED
     return Outcome.WRONG

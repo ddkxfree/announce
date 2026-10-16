@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -13,8 +14,18 @@ from harness.core.io import write_json, write_results
 from harness.core.manifest import environment_info, now, task_entry
 from harness.core.model import Model
 from harness.core.retry import retry_async
+from harness.core.scorer import requires_sandbox
 from harness.core.task import Task
-from harness.core.types import GenerateConfig, Message, ModelOutput, Sample, SampleResult, classify
+from harness.core.types import (
+    ErrorKind,
+    GenerateConfig,
+    Message,
+    ModelOutput,
+    Sample,
+    SampleResult,
+    classify,
+)
+from harness.sandbox.base import Sandbox, SandboxError, SandboxProvider
 
 
 def is_timeout(exc: BaseException) -> bool:
@@ -32,9 +43,12 @@ async def run_samples(
     retries: int = 3,
     retry_base_delay: float = 1.0,
     on_done: Callable[[SampleResult], None] | None = None,
+    sandbox_provider: SandboxProvider | None = None,
 ) -> list[SampleResult]:
     sem = asyncio.Semaphore(concurrency)
     model_spec = model.spec()
+    if task.sandbox is not None and sandbox_provider is None:
+        raise ValueError(f"task {task.name!r} needs a sandbox provider")
 
     def retryable(exc: BaseException) -> bool:
         return is_timeout(exc) or model.is_retryable(exc)
@@ -45,12 +59,14 @@ async def run_samples(
         def count_attempt(_: int) -> None:
             result.attempts += 1
 
-        async def generate(messages: list[Message]) -> ModelOutput:
-            key = cache_key(model_spec, messages, config)
+        async def generate(
+            messages: list[Message], tools: list[dict[str, Any]] | None = None
+        ) -> ModelOutput:
+            key = cache_key(model_spec, messages, config, tools)
             if cache is not None and (hit := cache.get(key)) is not None:
                 return hit.model_copy(update={"cached": True})
             out = await retry_async(
-                lambda: asyncio.wait_for(model.generate(messages, config), config.timeout),
+                lambda: asyncio.wait_for(model.generate(messages, config, tools), config.timeout),
                 retries=retries,
                 is_retryable=retryable,
                 base_delay=retry_base_delay,
@@ -61,11 +77,31 @@ async def run_samples(
             return out
 
         async with sem:
+            sandbox: Sandbox | None = None
             try:
-                result.messages, result.output = await task.solver(sample, generate)
-                result.score = task.scorer(sample, result.output.text)
+                if task.sandbox is not None:
+                    assert sandbox_provider is not None
+                    labels = {"harness.task": task.name, "harness.sample": sample.id}
+                    sandbox = await sandbox_provider.create(task.sandbox(sample), labels=labels)
+                solved = await task.solver(sample, generate, sandbox)
+                result.messages, result.output, result.steps = (
+                    solved.messages,
+                    solved.output,
+                    solved.steps,
+                )
+                if requires_sandbox(task.scorer):
+                    result.score = await task.scorer(sample, solved.output.text, sandbox)
+                else:
+                    result.score = task.scorer(sample, solved.output.text)
             except Exception as exc:
                 result.error = f"{type(exc).__name__}: {exc}"
+                result.error_kind = (
+                    ErrorKind.ENV if isinstance(exc, SandboxError) else ErrorKind.MODEL
+                )
+            finally:
+                if sandbox is not None:
+                    with contextlib.suppress(Exception):
+                        await sandbox.close()
         result.outcome = classify(result)
         if on_done:
             on_done(result)
@@ -99,6 +135,7 @@ async def run_eval(
     retries: int = 3,
     run_config: dict[str, Any] | None = None,
     progress: Any | None = None,
+    sandbox_provider: SandboxProvider | None = None,
 ) -> Path:
     """Run every task, writing per-sample logs, summaries and a manifest under one run dir.
 
@@ -124,6 +161,8 @@ async def run_eval(
             samples = task.load()
             entry = task_entry(task, samples)
             entry["generate_config"] = config.model_dump()
+            if task.sandbox is not None and sandbox_provider is not None:
+                entry["sandbox_provider"] = sandbox_provider.describe()
             manifest["tasks"].append(entry)
             write_json(manifest_path, manifest)
 
@@ -143,6 +182,7 @@ async def run_eval(
                 concurrency=concurrency,
                 retries=retries,
                 on_done=on_done,
+                sandbox_provider=sandbox_provider,
             )
             summary = summarize(results)
             write_results(run_dir / task.name / "samples.jsonl", results)

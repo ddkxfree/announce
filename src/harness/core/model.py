@@ -6,7 +6,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from harness.core.types import GenerateConfig, Message, ModelOutput, Usage
+from harness.core.types import GenerateConfig, Message, ModelOutput, ToolCall, Usage
+
+Tool = dict[str, Any]
 
 
 class RetryableError(Exception):
@@ -17,7 +19,9 @@ class Model(ABC):
     name: str
 
     @abstractmethod
-    async def generate(self, messages: list[Message], config: GenerateConfig) -> ModelOutput: ...
+    async def generate(
+        self, messages: list[Message], config: GenerateConfig, tools: list[Tool] | None = None
+    ) -> ModelOutput: ...
 
     def is_retryable(self, exc: BaseException) -> bool:
         return isinstance(exc, RetryableError)
@@ -54,7 +58,9 @@ class OpenAICompatibleModel(Model):
         # Retries are owned by the runner so every model type behaves the same way.
         self._client = AsyncOpenAI(base_url=self.base_url, api_key=api_key, max_retries=0)
 
-    async def generate(self, messages: list[Message], config: GenerateConfig) -> ModelOutput:
+    async def generate(
+        self, messages: list[Message], config: GenerateConfig, tools: list[Tool] | None = None
+    ) -> ModelOutput:
         kwargs: dict[str, Any] = {
             "model": self.name,
             "messages": messages,
@@ -68,6 +74,8 @@ class OpenAICompatibleModel(Model):
             kwargs["seed"] = config.seed
         if config.stop:
             kwargs["stop"] = config.stop
+        if tools:
+            kwargs["tools"] = tools
 
         start = time.perf_counter()
         resp = await self._client.chat.completions.create(**kwargs)
@@ -80,8 +88,14 @@ class OpenAICompatibleModel(Model):
                 input_tokens=resp.usage.prompt_tokens or 0,
                 output_tokens=resp.usage.completion_tokens or 0,
             )
+        tool_calls = [
+            ToolCall(id=c.id, name=c.function.name, arguments=c.function.arguments or "")
+            for c in (choice.message.tool_calls or [])
+            if c.type == "function"
+        ]
         return ModelOutput(
             text=choice.message.content or "",
+            tool_calls=tool_calls,
             finish_reason=choice.finish_reason,
             usage=usage,
             latency_s=latency,
@@ -120,7 +134,9 @@ class MockModel(Model):
         self._respond = respond
         self.calls = 0
 
-    async def generate(self, messages: list[Message], config: GenerateConfig) -> ModelOutput:
+    async def generate(
+        self, messages: list[Message], config: GenerateConfig, tools: list[Tool] | None = None
+    ) -> ModelOutput:
         self.calls += 1
         out = self._respond(messages)
         if isinstance(out, ModelOutput):

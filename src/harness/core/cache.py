@@ -10,8 +10,19 @@ from typing import Any
 from harness.core.types import GenerateConfig, Message, ModelOutput
 
 
-def cache_key(model_spec: dict[str, Any], messages: list[Message], config: GenerateConfig) -> str:
-    payload = {"model": model_spec, "messages": messages, "config": config.cache_fields()}
+def cache_key(
+    model_spec: dict[str, Any],
+    messages: list[Message],
+    config: GenerateConfig,
+    tools: list[dict[str, Any]] | None = None,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": model_spec,
+        "messages": messages,
+        "config": config.cache_fields(),
+    }
+    if tools:
+        payload["tools"] = tools
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
     return hashlib.sha256(blob).hexdigest()
 

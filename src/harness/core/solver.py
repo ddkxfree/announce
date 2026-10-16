@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol
 
 from harness.core.fingerprint import fingerprint
-from harness.core.types import Message, ModelOutput, Sample
+from harness.core.types import Message, ModelOutput, Sample, SolveResult
 
-Generate = Callable[[list[Message]], Awaitable[ModelOutput]]
+if TYPE_CHECKING:
+    from harness.sandbox.base import Sandbox
+
+
+class Generate(Protocol):
+    async def __call__(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None
+    ) -> ModelOutput: ...
 
 
 class Solver(Protocol):
@@ -14,14 +21,15 @@ class Solver(Protocol):
 
     A solver receives a ``generate`` function (already wrapped with caching, retries
     and timeouts by the runner) so that multi-step solvers such as agent loops can
-    call the model as many times as they need.
+    call the model as many times as they need. Tasks that declare a sandbox also
+    pass the sample's sandbox.
     """
 
     name: str
 
     async def __call__(
-        self, sample: Sample, generate: Generate
-    ) -> tuple[list[Message], ModelOutput]: ...
+        self, sample: Sample, generate: Generate, sandbox: Sandbox | None = None
+    ) -> SolveResult: ...
 
     def describe(self) -> dict[str, Any]: ...
 
@@ -62,10 +70,10 @@ class PromptSolver:
         return messages
 
     async def __call__(
-        self, sample: Sample, generate: Generate
-    ) -> tuple[list[Message], ModelOutput]:
+        self, sample: Sample, generate: Generate, sandbox: Sandbox | None = None
+    ) -> SolveResult:
         messages = self.build_messages(sample)
-        return messages, await generate(messages)
+        return SolveResult(messages=messages, output=await generate(messages))
 
     def describe(self) -> dict[str, Any]:
         desc = {

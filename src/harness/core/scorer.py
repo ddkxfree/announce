@@ -2,20 +2,43 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from harness.core.fingerprint import fingerprint
 from harness.core.types import Sample, Score
+
+if TYPE_CHECKING:
+    from harness.sandbox.base import Sandbox
 
 _NUM = r"-?[\d,]*\.?\d+"
 
 
 class Scorer(Protocol):
+    """Scores from the raw model output alone, so saved runs can be rescored offline."""
+
     name: str
 
     def __call__(self, sample: Sample, text: str) -> Score: ...
 
     def describe(self) -> dict[str, Any]: ...
+
+
+class SandboxScorer(Protocol):
+    """Scores by inspecting the sample's sandbox after the solver finished, e.g. running tests.
+
+    The sandbox is gone once the sample completes, so these runs cannot be rescored offline.
+    """
+
+    name: str
+    requires_sandbox: bool
+
+    async def __call__(self, sample: Sample, text: str, sandbox: Sandbox) -> Score: ...
+
+    def describe(self) -> dict[str, Any]: ...
+
+
+def requires_sandbox(scorer: Scorer | SandboxScorer) -> bool:
+    return bool(getattr(scorer, "requires_sandbox", False))
 
 
 def normalize_number(raw: str) -> str | None:

@@ -75,7 +75,7 @@ def test_retries_are_bounded(toy_task):
 
 def test_timeouts_are_retried(toy_task):
     class Slow(MockModel):
-        async def generate(self, messages, config):
+        async def generate(self, messages, config, tools=None):
             self.calls += 1
             if self.calls == 1:
                 await asyncio.sleep(1)
@@ -125,7 +125,7 @@ def test_concurrency_limit_is_respected():
     active = {"now": 0, "max": 0}
 
     class Tracking(MockModel):
-        async def generate(self, messages, config):
+        async def generate(self, messages, config, tools=None):
             active["now"] += 1
             active["max"] = max(active["max"], active["now"])
             await asyncio.sleep(0.01)
