@@ -1,0 +1,22 @@
+# SWE-bench Lite with a local Ollama model (needs Docker and `uv sync --extra swebench`):
+#   docker pull swebench/sweb.eval.x86_64.django_1776_django-11099:latest
+#   docker pull swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5227:latest
+#   harness run -c configs/swebench-ollama.yaml                          # baseline agent
+#   harness run -c configs/swebench-ollama.yaml -p swebench.solver=mini  # mini-swe-agent
+# Check the grading pipeline itself, without any model (both should be resolved):
+#   harness run -m none/none -t swebench -p swebench.solver=oracle \
+#     -p 'swebench.ids=[django__django-11099, pytest-dev__pytest-5227]'
+model: ollama/qwen2.5:3b-instruct
+generate:
+  temperature: 0.0
+  max_tokens: 1024
+  seed: 0
+  timeout: 600
+concurrency: 2
+tasks:
+  - name: swebench
+    params:
+      ids: [django__django-11099, pytest-dev__pytest-5227]
+      solver: agent
+      max_steps: 20
+      command_timeout: 120
