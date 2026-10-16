@@ -1,0 +1,17 @@
+# Small local run against Ollama, no API key needed:
+#   ollama pull qwen2.5:0.5b-instruct
+#   harness run -c configs/ollama-smoke.yaml
+model: ollama/qwen2.5:0.5b-instruct
+generate:
+  temperature: 0.0
+  max_tokens: 512
+  seed: 0
+  timeout: 300
+concurrency: 4
+tasks:
+  - name: gsm8k
+    params:
+      limit: 20
+  - name: mmlu
+    params:
+      limit: 40

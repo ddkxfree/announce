@@ -1,0 +1,6 @@
+[metadata]
+difficulty = "easy"
+category = "debugging"
+
+[verifier]
+timeout_sec = 30

@@ -1,0 +1,19 @@
+# harness run -c configs/example.yaml
+model: dashscope/qwen-plus
+generate:
+  temperature: 0.0
+  max_tokens: 1024
+  timeout: 120
+concurrency: 8
+retries: 3
+tasks:
+  - name: gsm8k
+    params:
+      limit: 100
+      n_shot: 0
+  - name: mmlu
+    params:
+      limit: 200
+      n_shot: 0
+    generate:
+      max_tokens: 512

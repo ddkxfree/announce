@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from harness.core.types import SampleResult
+
+
+def write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+def read_json(path: Path) -> Any:
+    return json.loads(Path(path).read_text())
+
+
+def write_results(path: Path, results: list[SampleResult]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        for r in results:
+            f.write(r.model_dump_json() + "\n")
+
+
+def read_results(path: Path) -> list[SampleResult]:
+    with open(path) as f:
+        return [SampleResult.model_validate_json(line) for line in f if line.strip()]

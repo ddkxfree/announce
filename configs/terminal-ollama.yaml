@@ -1,0 +1,17 @@
+# Agent run on the built-in terminal tasks with a local Ollama model (needs Docker):
+#   ollama pull qwen2.5:3b-instruct
+#   harness run -c configs/terminal-ollama.yaml
+# Check that the tasks themselves are sound, without any model:
+#   harness run -m none/none -t terminal -p terminal.solver=oracle
+model: ollama/qwen2.5:3b-instruct
+generate:
+  temperature: 0.0
+  max_tokens: 512
+  seed: 0
+  timeout: 300
+concurrency: 3
+tasks:
+  - name: terminal
+    params:
+      max_steps: 10
+      command_timeout: 60
