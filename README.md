@@ -6,8 +6,9 @@
 
 - **平台内核**：用 GSM8K 和 MMLU 跑通"加载数据 → 构造 prompt → 调模型 → 抽取答案 → 打分 → 统计 → 归档"的完整链路，具备并发、重试、缓存续跑、可复现记录、离线重打分和运行对比能力。
 - **Agent 评测**：每道题一个 Docker 容器，Agent 通过工具调用在容器里执行命令，结束后由测试脚本检查容器状态来判分；完整记录 Agent 每一步的轨迹。
+- **SWE-bench 与 mini-swe-agent**：接入 SWE-bench Lite（官方镜像和判分逻辑）；mini-swe-agent 作为可替换的 Solver 插件，和基线 Agent 在同一批题上对比。
 
-每一轮工作的详细记录见 [`docs/progress/`](docs/progress/README.md)，后续计划见 [`docs/roadmap.md`](docs/roadmap.md)。
+**想在自己电脑上跑起来，看 [上手练习指南](docs/hands-on.md)。** 每一轮工作的详细记录见 [`docs/progress/`](docs/progress/README.md)，后续计划见 [`docs/roadmap.md`](docs/roadmap.md)。
 
 ## 快速开始
 
@@ -27,6 +28,13 @@ uv run harness run -m dashscope/qwen-plus -t gsm8k -t mmlu --limit 50
 uv run harness run -m none/none -t terminal -p terminal.solver=oracle   # 先用参考答案验证任务本身
 ollama pull qwen2.5:3b-instruct
 uv run harness run -c configs/terminal-ollama.yaml
+uv run harness run -c configs/terminal-ollama.yaml -p terminal.solver=mini   # 换成 mini-swe-agent
+
+# SWE-bench（需要 Docker 和可选依赖）
+uv sync --extra swebench
+uv run harness run -m none/none -t swebench -p swebench.solver=oracle \
+    -p 'swebench.ids=[django__django-11099, pytest-dev__pytest-5227]'     # 参考补丁，应全部解决
+uv run harness run -c configs/swebench-ollama.yaml -p swebench.solver=mini
 ```
 
 模型用 `provider/model` 指定，所有兼容 OpenAI 接口的服务都能接：
@@ -73,8 +81,8 @@ src/harness/
 │   ├── manifest.py   运行环境和任务指纹
 │   └── config.py     YAML 运行配置
 ├── sandbox/          Sandbox 抽象和 Docker 实现
-├── solvers/          basic_agent（bash + submit 工具调用循环）、oracle（运行参考答案）
-├── tasks/            gsm8k.py、mmlu.py、terminal.py，以及 terminal_data/ 下的终端任务
+├── solvers/          basic_agent（bash + submit 工具调用循环）、mini_swe_agent（桥接 mini-swe-agent）、oracle
+├── tasks/            gsm8k.py、mmlu.py、terminal.py、swebench.py，以及 terminal_data/ 下的终端任务
 ├── analysis/         stats（bootstrap 置信区间、Agent 统计）、rescore、diff
 └── cli.py
 ```
@@ -160,14 +168,15 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
 
-67 个测试。单元测试使用 `MockModel`、内存数据集和内存版假沙箱，不需要网络；`tests/test_docker_sandbox.py` 中的 4 个集成测试需要 Docker，没有时自动跳过。集成测试还会检查每个终端任务都能被 Oracle 解出，且什么都不做的 Agent 一定失败。
+83 个测试。单元测试使用 `MockModel`、内存数据集和内存版假沙箱，不需要网络；`tests/test_docker_sandbox.py` 中的集成测试需要 Docker（SWE-bench 的还需要本地已拉取镜像），没有时自动跳过。集成测试会检查每个终端任务和 SWE-bench 题目都能被 Oracle 解出，且什么都不做的 Agent 一定失败。
 
 ## 路线图
 
 - [x] 阶段 1～4：平台内核（GSM8K、MMLU、并发/重试/缓存、可复现 manifest、诊断统计、rescore、diff）
 - [ ] 阶段 5：Agent 评测和 Docker 沙箱
   - [x] 沙箱抽象与 Docker 实现、`env_error`、基线 Agent、轨迹记录、3 个自建终端任务、Oracle 校验
-  - [ ] 接入 SWE-bench、真实 Terminal-Bench 任务，mini-swe-agent 作为 Solver 插件
+  - [x] 接入 SWE-bench Lite，mini-swe-agent 作为 Solver 插件
+  - [ ] 接入真实的 Terminal-Bench 任务
 - [ ] 阶段 6：LLM-as-Judge（交换位置去偏、多裁判投票）
 - [ ] 阶段 7：多次运行的方差分析、错误自动归类报告
 - [ ] 阶段 8：用 Agent 自动接入新评测集
