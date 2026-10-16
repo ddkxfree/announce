@@ -102,10 +102,16 @@ def terminal(
     chosen: Solver
     if solver == "agent":
         chosen = BasicAgent(max_steps=max_steps, command_timeout=command_timeout)
+    elif solver == "mini":
+        from harness.solvers.mini_swe_agent import MiniSweAgent
+
+        chosen = MiniSweAgent(
+            config="mini", max_steps=max_steps, command_timeout=command_timeout, cwd="/app"
+        )
     elif solver == "oracle":
         chosen = OracleSolver()
     else:
-        raise ValueError(f"unknown solver {solver!r}; use 'agent' or 'oracle'")
+        raise ValueError(f"unknown solver {solver!r}; use 'agent', 'mini' or 'oracle'")
 
     return Task(
         name="terminal",

@@ -10,7 +10,7 @@ from harness.core.types import Message, ModelOutput, Sample, SolveResult, Step, 
 from harness.sandbox.base import Sandbox
 
 SYSTEM_PROMPT = """\
-You are an autonomous agent working inside a Linux container. Your working directory is /app.
+You are an autonomous agent working inside a Linux container. Your working directory is {workdir}.
 Use the bash tool to inspect and change the environment. Run one command at a time and check
 its output before deciding the next step. When the task is complete, call the submit tool."""
 
@@ -53,11 +53,12 @@ class BasicAgent:
         self,
         *,
         system_prompt: str = SYSTEM_PROMPT,
+        workdir: str = "/app",
         max_steps: int = 20,
         command_timeout: float = 60.0,
         max_observation_chars: int = 4000,
     ) -> None:
-        self.system_prompt = system_prompt
+        self.system_prompt = system_prompt.format(workdir=workdir)
         self.max_steps = max_steps
         self.command_timeout = command_timeout
         self.max_observation_chars = max_observation_chars
