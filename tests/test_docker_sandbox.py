@@ -102,3 +102,41 @@ def test_untouched_environment_fails_every_builtin_terminal_task():
         )
     )
     assert [r.outcome for r in results] == [Outcome.WRONG] * len(results)
+
+
+SWEBENCH_ID = "pytest-dev__pytest-5227"
+SWEBENCH_IMAGE = "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5227:latest"
+
+
+def _have_image(name: str) -> bool:
+    import docker
+
+    try:
+        docker.from_env().images.get(name)
+        return True
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _have_image(SWEBENCH_IMAGE), reason=f"{SWEBENCH_IMAGE} not pulled")
+@pytest.mark.parametrize(
+    ("solver", "model_reply", "outcome", "extracted"),
+    [
+        ("oracle", None, Outcome.CORRECT, "resolved"),
+        ("agent", "I am done.", Outcome.WRONG, "empty_patch"),
+    ],
+)
+def test_swebench_gold_patch_resolves_and_no_change_does_not(
+    solver, model_reply, outcome, extracted
+):
+    pytest.importorskip("swebench")
+    from fakes import scripted
+
+    from harness.sandbox.docker import DockerProvider
+
+    task = get_task("swebench", solver=solver, ids=[SWEBENCH_ID])
+    model = scripted(model_reply) if model_reply else get_model("none/none")
+    [r] = asyncio.run(
+        run_samples(task, task.load(), model, GenerateConfig(), sandbox_provider=DockerProvider())
+    )
+    assert (r.outcome, r.score.extracted) == (outcome, extracted), (r.error, r.score)
