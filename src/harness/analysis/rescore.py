@@ -44,9 +44,10 @@ def rescore_run(run_dir: Path) -> dict[str, Any]:
         old_fp = entry["scorer"].get("fingerprint")
         entry["scorer"] = scorer.describe()
         new_fp = entry["scorer"]["fingerprint"]
-        entry.setdefault("rescore_history", []).append(
-            {"at": now(), "from_fingerprint": old_fp, "to_fingerprint": new_fp}
-        )
+        if new_fp != old_fp:
+            entry.setdefault("rescore_history", []).append(
+                {"at": now(), "from_fingerprint": old_fp, "to_fingerprint": new_fp}
+            )
         before_acc = manifest["results"].get(name, {}).get("accuracy")
         manifest["results"][name] = summary
         changes[name] = {

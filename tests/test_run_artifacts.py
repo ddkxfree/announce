@@ -5,7 +5,7 @@ import pytest
 from conftest import make_task, question_number
 
 from harness.analysis import rescore as rescore_mod
-from harness.analysis.diff import diff_runs, flatten
+from harness.analysis.diff import diff_manifests, diff_runs, flatten
 from harness.analysis.rescore import rescore_run
 from harness.analysis.stats import bootstrap_ci, summarize
 from harness.core.io import read_results
@@ -103,6 +103,12 @@ def test_identical_runs_have_no_manifest_changes(tmp_path):
 
 def test_flatten_indexes_named_lists():
     assert flatten({"tasks": [{"name": "x", "n": 1}]}) == {"tasks.x.name": "x", "tasks.x.n": 1}
+
+
+def test_task_missing_from_one_run_is_reported_once():
+    a = {"tasks": [{"name": "x", "n": 1}, {"name": "y", "n": 2, "m": 3}]}
+    b = {"tasks": [{"name": "x", "n": 5}]}
+    assert diff_manifests(a, b) == [("tasks.x.n", 1, 5), ("tasks.y", "<present>", None)]
 
 
 def test_bootstrap_ci_brackets_mean():

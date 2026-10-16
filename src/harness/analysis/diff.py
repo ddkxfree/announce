@@ -10,22 +10,42 @@ from harness.core.types import Outcome
 VOLATILE_KEYS = {"run_id", "status", "started_at", "finished_at", "results"}
 
 
-def flatten(obj: Any, prefix: str = "") -> dict[str, Any]:
+def flatten(obj: Any, prefix: str = "", items: set[str] | None = None) -> dict[str, Any]:
+    """Flatten nested dicts to dotted keys; lists of named dicts are keyed by name.
+
+    If ``items`` is given, the key prefix of every named list item is added to it.
+    """
     out: dict[str, Any] = {}
     if isinstance(obj, dict):
         for k, v in obj.items():
-            out.update(flatten(v, f"{prefix}{k}."))
+            out.update(flatten(v, f"{prefix}{k}.", items))
     elif isinstance(obj, list) and obj and all(isinstance(x, dict) and "name" in x for x in obj):
         for x in obj:
-            out.update(flatten(x, f"{prefix}{x['name']}."))
+            item = f"{prefix}{x['name']}"
+            if items is not None:
+                items.add(item)
+            out.update(flatten(x, f"{item}.", items))
     else:
         out[prefix.rstrip(".")] = obj
     return out
 
 
+def _collapse(flat: dict[str, Any], item: str) -> None:
+    for k in [k for k in flat if k.startswith(f"{item}.")]:
+        del flat[k]
+    flat[item] = "<present>"
+
+
 def diff_manifests(a: dict[str, Any], b: dict[str, Any]) -> list[tuple[str, Any, Any]]:
-    fa = flatten({k: v for k, v in a.items() if k not in VOLATILE_KEYS})
-    fb = flatten({k: v for k, v in b.items() if k not in VOLATILE_KEYS})
+    items_a: set[str] = set()
+    items_b: set[str] = set()
+    fa = flatten({k: v for k, v in a.items() if k not in VOLATILE_KEYS}, items=items_a)
+    fb = flatten({k: v for k, v in b.items() if k not in VOLATILE_KEYS}, items=items_b)
+    # a task present in only one run is reported once rather than field by field
+    for item in items_a - items_b:
+        _collapse(fa, item)
+    for item in items_b - items_a:
+        _collapse(fb, item)
     keys = sorted(fa.keys() | fb.keys())
     return [(k, fa.get(k), fb.get(k)) for k in keys if fa.get(k) != fb.get(k)]
 
