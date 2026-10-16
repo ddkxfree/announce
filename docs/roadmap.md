@@ -25,7 +25,8 @@
 
 - 阶段 1～4 已完成：GSM8K、MMLU；并发、重试、缓存续跑；manifest、rescore、diff；诊断统计。见 [01](progress/01-platform-core.md)。
 - 阶段 5 第 1～5 步已完成：Docker 沙箱、`env_error`、基线工具调用 Agent、轨迹记录、3 个自建终端任务和 Oracle 校验。见 [02](progress/02-agent-sandbox.md)。
-- 67 个单元测试（其中 4 个 Docker 集成测试在无 Docker 时自动跳过），GitHub Actions CI。
+- 阶段 5 第 6、7 步已完成：SWE-bench Lite（官方镜像与判分逻辑、参考补丁 Oracle）、mini-swe-agent 作为 Solver 插件。见 [03](progress/03-swebench-mini-swe-agent.md)。
+- 83 个测试（Docker 集成测试在无 Docker 或无镜像时自动跳过），GitHub Actions CI。
 
 ## 下一步
 
@@ -38,8 +39,8 @@
 3. ~~基线工具调用 Agent（`bash` + `submit`，步数上限）。~~ 已完成：`solvers/basic_agent.py`
 4. ~~轨迹记录写入 `samples.jsonl`，`harness show --sample` 查看。~~ 已完成
 5. ~~自建 3 个 Terminal-Bench 风格的小任务，以及 Oracle Solver。~~ 已完成：`tasks/terminal_data/`
-6. 接入 SWE-bench Lite / Verified 的少量样本：复用官方 Docker 镜像和单测验证逻辑，包装为 Task 和 `SandboxScorer`。
-7. 把 mini-swe-agent 包装为 Solver 插件，和基线 Solver 在同一批题上对比。
+6. ~~接入 SWE-bench Lite / Verified 的少量样本：复用官方 Docker 镜像和单测验证逻辑，包装为 Task 和 `SandboxScorer`。~~ 已完成：`tasks/swebench.py`
+7. ~~把 mini-swe-agent 包装为 Solver 插件，和基线 Solver 在同一批题上对比。~~ 已完成：`solvers/mini_swe_agent.py`（本地 3B 模型两者都是 0/2，需要用更强的模型对比）
 8. 接入真实的 Terminal-Bench 任务（或通过 Harbor 的任务格式），验证不改 core 就能容纳第二种 Agent 评测集。
 
 验收：同一个模型分别配基线 Solver 和 mini-swe-agent，在自建任务和 SWE-bench 小样本上都能跑出结果；`harness show` 能看到完整轨迹；沙箱不泄漏容器。
