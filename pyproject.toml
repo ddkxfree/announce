@@ -15,6 +15,12 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.optional-dependencies]
+swebench = [
+    "mini-swe-agent>=2.4,<3",
+    "swebench>=5.0,<6",
+]
+
 [project.scripts]
 harness = "harness.cli:app"
 
