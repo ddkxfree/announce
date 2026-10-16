@@ -19,17 +19,13 @@
 4. **诊断优先**：每道题归为 `correct / wrong / extract_failed / truncated / api_error`，并记录抽取方式；报告 bootstrap 置信区间。
 5. **加新评测集不改 core**。如果做不到，说明抽象需要调整，先调整抽象。
 
-## 当前状态：阶段 1～4 已完成
+## 当前状态
 
-- GSM8K、MMLU 两个评测集，支持 few-shot、确定性抽样、MMLU 学科过滤
-- 兼容 OpenAI 接口的模型接入（openai、dashscope、deepseek、ollama、vllm）
-- 并发上限、可重试错误的指数退避、单题超时、单题失败隔离
-- 按请求内容哈希的磁盘缓存，可中断续跑
-- `manifest.json`、`samples.jsonl`、`summary.json` 运行产物
-- CLI：`run`、`show`、`rescore`、`diff`、`list-tasks`
-- 47 个离线单元测试，GitHub Actions CI
+每一轮的详细记录见 [`docs/progress/`](progress/README.md)。
 
-用 Ollama 上的 qwen2.5:0.5b-instruct 实测时观察到：GSM8K 20 题中 18 题用 `\boxed{}` 而非要求的 "The answer is N"；temperature 0.8 重跑时总分不变但有 4 道题对错翻转。这些都是诊断功能的实际用例。
+- 阶段 1～4 已完成：GSM8K、MMLU；并发、重试、缓存续跑；manifest、rescore、diff；诊断统计。见 [01](progress/01-platform-core.md)。
+- 阶段 5 第 1～5 步已完成：Docker 沙箱、`env_error`、基线工具调用 Agent、轨迹记录、3 个自建终端任务和 Oracle 校验。见 [02](progress/02-agent-sandbox.md)。
+- 67 个单元测试（其中 4 个 Docker 集成测试在无 Docker 时自动跳过），GitHub Actions CI。
 
 ## 下一步
 
@@ -37,14 +33,14 @@
 
 目标：平台能评测"模型 + Agent 框架"在需要执行环境的任务上的表现。
 
-1. `core/sandbox.py`：`Sandbox` 抽象（`exec(cmd) -> (exit_code, stdout, stderr)`、`write_file`、`read_file`、`close`），先实现基于 Python `docker` SDK 的 `DockerSandbox`。每个样本一个容器，任务结束必须清理。
-2. Runner 支持按样本创建和销毁沙箱，并把沙箱传给 solver 和 scorer。沙箱创建失败归类为新的 outcome `env_error`，与模型能力问题区分开。
-3. `solvers/basic_agent.py`：最简单的工具调用循环（一个 `bash` 工具，步数上限、token 上限），作为基线 Solver。它只用来验证链路，不追求效果。
-4. 轨迹记录：每一步的模型输出、工具调用、工具返回、耗时、token 写入 `samples.jsonl`。
-5. 自建 3 个 Terminal-Bench 风格的小任务（任务描述 + Dockerfile + 验证脚本），跑通后再接入真实评测集。
-6. 接入 SWE-bench Lite / Verified 的少量样本：复用官方 Docker 镜像和单测验证逻辑，包装为 Task 和 Scorer。
+1. ~~`Sandbox` 抽象和基于 Python `docker` SDK 的实现，每个样本一个容器，结束必须清理。~~ 已完成：`sandbox/`
+2. ~~Runner 按样本创建和销毁沙箱，传给 solver 和 scorer；环境故障归为 `env_error`。~~ 已完成
+3. ~~基线工具调用 Agent（`bash` + `submit`，步数上限）。~~ 已完成：`solvers/basic_agent.py`
+4. ~~轨迹记录写入 `samples.jsonl`，`harness show --sample` 查看。~~ 已完成
+5. ~~自建 3 个 Terminal-Bench 风格的小任务，以及 Oracle Solver。~~ 已完成：`tasks/terminal_data/`
+6. 接入 SWE-bench Lite / Verified 的少量样本：复用官方 Docker 镜像和单测验证逻辑，包装为 Task 和 `SandboxScorer`。
 7. 把 mini-swe-agent 包装为 Solver 插件，和基线 Solver 在同一批题上对比。
-8. 接入 Terminal-Bench（或通过 Harbor 的任务格式），验证不改 core 就能容纳第二种 Agent 评测集。
+8. 接入真实的 Terminal-Bench 任务（或通过 Harbor 的任务格式），验证不改 core 就能容纳第二种 Agent 评测集。
 
 验收：同一个模型分别配基线 Solver 和 mini-swe-agent，在自建任务和 SWE-bench 小样本上都能跑出结果；`harness show` 能看到完整轨迹；沙箱不泄漏容器。
 
